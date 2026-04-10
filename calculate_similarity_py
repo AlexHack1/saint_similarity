@@ -1,0 +1,36 @@
+import pandas as pd
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.manifold import TSNE
+
+# 1. Load your local CSV
+df = pd.read_csv('saints_data_full.csv')
+df = df.dropna(subset=['biography']).reset_index(drop=True)
+
+# 2. Generate Embeddings
+model = SentenceTransformer('all-MiniLM-L6-v2')
+print("Generating embeddings...")
+embeddings = model.encode(df['biography'].tolist(), show_progress_bar=True)
+
+# 3. Save raw embeddings (384-dimensional)
+# Use this for calculating exact similarity scores later
+np.save('saint_embeddings.npy', embeddings)
+
+# 4. Run t-SNE for Visualization
+# perplexity: roughly the number of neighbors each point considers (try 5-30)
+print("Running t-SNE dimension reduction...")
+tsne = TSNE(
+    n_components=2, 
+    perplexity=30, 
+    random_state=42, 
+    init='pca', 
+    learning_rate='auto'
+)
+tsne_results = tsne.fit_transform(embeddings)
+
+# 5. Save the 2D coordinates back into a CSV for easy plotting
+df['x'] = tsne_results[:, 0]
+df['y'] = tsne_results[:, 1]
+df.to_csv('saints_viz_data.csv', index=False)
+
+print("Checkpoint saved! You now have 'saint_embeddings.npy' and 'saints_viz_data.csv'.")
