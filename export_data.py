@@ -26,7 +26,8 @@ for i in range(len(df)):
         "url": str(row['url']),
         "group": partition[i], # This is the color category
         "x": float(row['x']) * 10,
-        "y": float(row['y']) * 10
+        "y": float(row['y']) * 10,
+        "similar": row['top_10_similar_indices']
     })
 
 # 4. Prepare the final JSON structure for D3.js

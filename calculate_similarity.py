@@ -5,6 +5,7 @@ from sklearn.manifold import TSNE
 import re
 from InstructorEmbedding import INSTRUCTOR
 import torch
+from sklearn.metrics.pairwise import cosine_similarity
 
 def surgical_scrub(text, saint_name):
     # 1. Handle the full name (e.g., "John of the Cross")
@@ -43,7 +44,9 @@ model._text_length = lambda text: len(text)
 # 2. Generate Embeddings
 #model = SentenceTransformer('all-MiniLM-L6-v2')
 
-instruction = "Represent the hagiography for clustering by historical era, location, and theological contribution, ignoring common names:"
+#instruction = "Represent the hagiography for clustering by historical era, location, and theological contribution, ignoring common names:"
+instruction = "Represent the hagiography for clustering: focus equally on historical era, geographic location, and the specific manner of the saint's life and death (vocation, miracles, and martyrdom)."
+
 print("Generating embeddings...")
 #embeddings = model.encode(df['biography'].tolist(), show_progress_bar=True)
 embeddings = model.encode([[instruction, text] for text in df['biography'].tolist()])
@@ -51,6 +54,23 @@ embeddings = model.encode([[instruction, text] for text in df['biography'].tolis
 # 3. Save raw embeddings (384-dimensional)
 # Use this for calculating exact similarity scores later
 np.save('saint_embeddings.npy', embeddings)
+
+# 2. Calculate the similarity matrix (Saints x Saints)
+# This results in a 1631x1631 matrix of scores between 0 and 1
+sim_matrix = cosine_similarity(embeddings)
+
+# 3. For each saint, find the top 10 indices
+top_10_list = []
+for i in range(len(sim_matrix)):
+    # Sort indices by similarity score (descending)
+    # [1:11] because index 0 is always the saint itself (similarity = 1.0)
+    similar_indices = np.argsort(sim_matrix[i])[::-1][1:11]
+    top_10_list.append(similar_indices.tolist())
+
+# 4. Add these to your JSON export
+# Assuming 'df' is your saints dataframe
+df['top_10_similar_indices'] = top_10_list
+
 
 # 4. Run t-SNE for Visualization
 # perplexity: roughly the number of neighbors each point considers (try 5-30)
