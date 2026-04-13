@@ -5,7 +5,7 @@ from networkx.readwrite import json_graph
 import community.community_louvain as louvain
 
 # 1. Load the dataframe (contains names, URLs, x/y coordinates)
-df = pd.read_csv('saints_viz_data.csv')
+df = pd.read_json('saints_embedding_data.json')
 
 # 2. Load the Graph topology from your JSON file
 with open('saints_graph.json', 'r') as f:
@@ -27,7 +27,7 @@ for i in range(len(df)):
         "group": partition[i], # This is the color category
         "x": float(row['x']) * 10,
         "y": float(row['y']) * 10,
-        "similar": row['top_10_similar_indices']
+        "similar": row['similar']
     })
 
 # 4. Prepare the final JSON structure for D3.js

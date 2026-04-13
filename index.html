@@ -8,16 +8,78 @@
         .node { stroke: #fff; stroke-width: 1.5px; cursor: pointer; }
         .link { stroke: #999; stroke-opacity: 0.3; }
         .label { font-size: 10px; pointer-events: none; fill: #ddd; }
-        #controls { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; }
+
+        #left-panel {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    width: 350px;
+    z-index: 2000; /* High number to stay above everything */
+    display: flex;
+    flex-direction: column; /* Stacks children vertically */
+    pointer-events: none; 
+}
+
+#controls {
+    background: rgba(0, 0, 0, 0.85); /* Dark background */
+    padding: 15px;
+    border-radius: 8px;
+    pointer-events: auto; /* Allow typing */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    margin-bottom: 8px; /* Space between search and sidebar */
+}
+
+#sidebar {
+    background: white;
+    color: #333;
+    padding: 20px;
+    border-radius: 8px;
+    pointer-events: auto;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    max-height: 85vh;       /* Increased from 70vh to give it more "headroom" */
+    height: auto;           /* Let it adjust to the size of the text/list */
+    overflow: hidden;       /* This physically removes the scroll bar */
+}
+
+/* The Toggle */
+#sidebar.hidden {
+    display: none; 
+}
+
+/* Ensure the Map fills the background */
+#viz {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+}
+        #close-btn { cursor: pointer; float: right; border: none; background: none; font-size: 20px; }
     </style>
 </head>
 <body>
-    <div id="controls">
-    <b>Saint Similarity Network</b><br>
-    <input type="text" id="search" placeholder="Search for a saint..." style="margin-top:10px; padding:5px; width:100%;">
-    <p style="font-size: 11px;">Scroll to Zoom | Click to visit Wiki</p>
+<div id="wrapper">
+    <div id="left-panel">
+        <div id="controls">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <b style="color: white;">Saint Similarity Network</b>
+            </div>
+            <input type="text" id="search" placeholder="Search for a saint..." style="margin-top:10px; padding:5px; width:100%;">
+        </div>
+
+        <div id="sidebar" class="hidden">
+            <button id="close-btn" style="color: black; cursor: pointer; background: none; border: none; font-size: 20px;">x</button>
+            <h2 id="saint-name"></h2>
+            <a id="saint-link" target="_blank">View Biography</a>
+            <hr>
+            <p><strong>Similar Saints:</strong></p>
+            <ul id="similar-list"></ul>
+        </div>
     </div>
+
     <svg id="viz"></svg>
+</div>
 
     <script>
         const width = window.innerWidth;
@@ -29,35 +91,57 @@
             .call(d3.zoom().on("zoom", (event) => {
                 container.attr("transform", event.transform);
             }));
-
+        d3.select("#close-btn").on("click", function() {
+            d3.select("#sidebar").classed("hidden", true);
+        });
         const container = svg.append("g");
 
         const color = d3.scaleOrdinal(d3.schemeCategory10); // Standard 10-color palette
         
+        function resetHighlight() {
+            // Remove red lines
+            container.selectAll(".temp-link").remove();
+        
+            // Restore opacity to dots and labels
+            d3.selectAll(".node").transition().duration(300)
+                    .style("opacity", 1)
+                    // Use the same logic you used when you first created the nodes
+                    .attr("r", d => d.size || 7) 
+                    .style("stroke", "#fff")
+                    // If your border width was also dynamic, use a function here too
+                    .style("stroke-width", d => d.borderWidth || "1.5px");
+
+            d3.selectAll(".label").transition().duration(300).style("opacity", 1);
+
+            // Hide sidebar
+            d3.select("#sidebar").classed("hidden", true);
+        }
+                    // Escape Key Listener
+            d3.select(window).on("keydown", function(e) {
+                if (e.key === "Escape") {
+                    resetHighlight();
+                    d3.select("#search").property("value", ""); // Optional: clear search text
+                }
+            });
+
+            // Update your Close Button (X)
+            d3.select("#close-btn").on("click", function() {
+                resetHighlight();
+            });
+
         d3.json("saints_ui_data.json").then(graph => {
             const simulation = d3.forceSimulation(graph.nodes)
                 .force("link", d3.forceLink(graph.links).id(d => d.id).distance(50))
                 .force("charge", d3.forceManyBody().strength(-100))
-                .force("center", d3.forceCenter(width / 2, height / 2));
+                .force("center", d3.forceCenter(width / 2, height / 2))
+                .alphaDecay(0.1) // Higher = settles faster
+                .velocityDecay(0.6); // Higher = more "friction" (less sliding)
 
             const link = container.append("g")
                 .selectAll("line")
                 .data(graph.links)
                 .join("line")
                 .attr("class", "link");
-
-//            const node = container.append("g")
-//                .selectAll("circle")
-//                .data(graph.nodes)
-//                .join("circle")
-//                .attr("class", "node")
-//                .attr("r", 6)
-//                .attr("fill", "#ffca28")
-//                .on("click", (event, d) => { window.open(d.url, '_blank'); })
-//                .call(d3.drag()
-//                    .on("start", dragstarted)
-//                    .on("drag", dragged)
-//                    .on("end", dragended));
 
             const node = container.append("g")
                 .selectAll("circle")
@@ -66,21 +150,160 @@
                 .attr("class", "node")
                 .attr("r", 7)
                 .attr("fill", d => color(d.group)) // Uses the 'group' ID from Python
-                .on("click", (event, d) => { window.open(d.url, '_blank'); });
+            .on("click", function(event, d) {
+                // 1. Show the sidebar
+                d3.select("#sidebar").classed("hidden", false);
 
-                // 3. Add Search Functionality
+                // 2. Populate basic info
+                d3.select("#saint-name").text(d.name);
+                d3.select("#saint-link").attr("href", d.url); // Note: changed .link to .url based on your JSON
+
+                // 3. Populate Similar Saints
+                const list = d3.select("#similar-list");
+                list.html(""); 
+
+                // Safety check: only parse if d.similar actually exists
+                if (d.similar) {
+                    try {
+                        // Handle cases where it might already be an array or still a string
+                        const similarArray = typeof d.similar === 'string' ? JSON.parse(d.similar) : d.similar;
+
+                        const similarIndices = similarArray.map(s => s.idx);
+
+                        d3.selectAll(".node")
+                            .transition().duration(300)
+                            .style("opacity", node => 
+                                (node.id === d.id || similarIndices.includes(node.id)) ? 1 : 0.1
+                            )
+                            .attr("stroke", node => similarIndices.includes(node.id) ? "#ff0000" : "none")
+                            .attr("stroke-width", node => similarIndices.includes(node.id) ? 3 : 0);
+
+                        // Ghost the Labels
+                        d3.selectAll(".label") // Update this to match your label class
+                            .transition().duration(300)
+                            .style("opacity", n => 
+                                (n.id === d.id || similarIndices.includes(n.id)) ? 1 : 0.30 // Labels can be even lighter
+                            )
+                            .style("font-weight", n => 
+                                (n.id === d.id || similarIndices.includes(n.id)) ? "bold" : "normal"
+                            );
+                    
+                        container.selectAll(".temp-link").remove();
+                                            
+                        // 2. Draw the new RED lines
+                        similarArray.forEach(item => {
+                            const target = graph.nodes[item.idx];
+                            if (target) {
+                                container.append("line")
+                                    .attr("class", "temp-link") // Important: same class as the remove above
+                                    .attr("x1", d.x)
+                                    .attr("y1", d.y)
+                                    .attr("x2", d.x) // Start at origin for animation
+                                    .attr("y2", d.y)
+                                    .transition().duration(500)
+                                    .attr("x2", target.x)
+                                    .attr("y2", target.y)
+                                    .attr("stroke", "#ff4444") // Nice vibrant red
+                                    .attr("stroke-width", 1.5)
+                                    .attr("stroke-dasharray", "4,2") // Optional: dashed look
+                                    .style("pointer-events", "none"); // Don't let lines block clicks
+                            }
+                        });
+
+                        similarArray.forEach(item => {
+
+                            // 1. Get the index out of the object
+                            // If your Python script exported it as 'idx', use item.idx
+                            const neighborIdx = typeof item === 'object' ? item.idx : item;
+                            const neighbor = graph.nodes[neighborIdx]; 
+                        
+                            if (neighbor) {
+                                const li = list.append("li")
+                                    .style("margin-bottom", "8px")
+                                    .style("list-style", "none"); // Cleaner look for the sidebar
+                            
+                                // 2. Clickable Name
+                                li.append("a")
+                                    .attr("href", neighbor.url)
+                                    .attr("target", "_blank")
+                                    .attr("rel", "noopener noreferrer")
+                                    .style("display", "block")
+                                    .style("text-decoration", "none")
+                                    .style("color", "steelblue")
+                                    .style("font-weight", "bold")
+                                    .text(neighbor.name)
+                                    .on("mouseover", function() { d3.select(this).style("text-decoration", "underline"); })
+                                    .on("mouseout", function() { d3.select(this).style("text-decoration", "none"); })
+                                    .on("click", (e) => {
+                                        node.filter(n => n.id === neighbor.id).dispatch("click");
+                                    });
+                                
+                                // 3. Handle the score (check if item is an object and has a score)
+                                if (typeof item === 'object' && item.score) {
+                                    const percent = Math.round(item.score * 100);
+
+                                    li.append("div")
+                                        .style("font-size", "11px")
+                                        .style("color", "#666")
+                                        .text(`${percent}% similarity`);
+                                
+                                    const barContainer = li.append("div")
+                                        .style("background", "#eee")
+                                        .style("height", "3px")
+                                        .style("width", "100%")
+                                        .style("margin-top", "2px");
+                                
+                                    barContainer.append("div")
+                                        .style("background", "steelblue")
+                                        .style("height", "100%")
+                                        .style("width", `${percent}%`);
+                                }
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Parsing error on saint:", d.name, e);
+                    }
+                }
+            });
+
             d3.select("#search").on("keyup", function(event) {
-                const searchTerm = event.target.value.toLowerCase();
-                
-                // Highlight nodes that match search
-                node.style("opacity", d => d.name.toLowerCase().includes(searchTerm) ? 1 : 0.1);
-                label.style("opacity", d => d.name.toLowerCase().includes(searchTerm) ? 1 : 0.1);
-                
-                // Pulse the matched nodes
-                node.attr("r", d => d.name.toLowerCase().includes(searchTerm) ? 12 : 7)
-                    .style("stroke", d => d.name.toLowerCase().includes(searchTerm) ? "#fff" : "none")
-                    .style("stroke-width", "3px");
-            })
+            const searchTerm = event.target.value.toLowerCase();
+                    
+            // 1. ALWAYS clear red lines whenever the search changes or begins
+            container.selectAll(".temp-link").remove();
+                    
+            // 2. If the user hits ENTER, do the teleport and full highlight
+            if (event.key === "Enter") {
+                const match = graph.nodes.find(n => n.name.toLowerCase().includes(searchTerm));
+                if (match) {
+                    // This centers the map on the saint
+                    teleportToSaint(match);
+
+                    // This triggers the red lines and sidebar population 
+                    // by simulating a click on that specific dot
+                    node.filter(d => d === match).dispatch("click");
+                    return; // Exit so we don't run the generic opacity code below
+                }
+            }
+        
+            // 3. Generic "Live" highlighting (while typing)
+            if (searchTerm === "") {
+                // If search is empty, call our global reset to restore everything perfectly
+                resetMapState();
+            } else {
+                // Highlight matches, ghost others
+                const isMatch = d => d.name.toLowerCase().includes(searchTerm);
+            
+                node.style("opacity", d => isMatch(d) ? 1 : 0.1)
+                    // RESTORE: Use original size logic here instead of 12 or 7
+                    .attr("r", d => d.size || 7) 
+                    // RESTORE: Keep the white stripe visible even when ghosted
+                    .style("stroke", "#fff")
+                    .style("stroke-width", d => d.borderWidth || "1.5px");
+            
+                label.style("opacity", d => isMatch(d) ? 1 : 0.1);
+            }
+        });
             const label = container.append("g")
                 .selectAll("text")
                 .data(graph.nodes)

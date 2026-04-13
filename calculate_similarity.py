@@ -6,6 +6,7 @@ import re
 from InstructorEmbedding import INSTRUCTOR
 import torch
 from sklearn.metrics.pairwise import cosine_similarity
+import json
 
 def surgical_scrub(text, saint_name):
     # 1. Handle the full name (e.g., "John of the Cross")
@@ -37,19 +38,19 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
 # Load model and move it to the GPU
-model = INSTRUCTOR('hkunlp/instructor-large', device=device)
+#model = INSTRUCTOR('hkunlp/instructor-large', device=device)
 # The rest of your code stays the same!
-model._text_length = lambda text: len(text)
+#model._text_length = lambda text: len(text)
 
 # 2. Generate Embeddings
-#model = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
-#instruction = "Represent the hagiography for clustering by historical era, location, and theological contribution, ignoring common names:"
-instruction = "Represent the hagiography for clustering: focus equally on historical era, geographic location, and the specific manner of the saint's life and death (vocation, miracles, and martyrdom)."
+instruction = "Represent the hagiography for clustering by historical era, location, and theological contribution, ignoring common names:"
+#instruction = "Represent the hagiography for clustering: focus equally on historical era, geographic location, and the specific manner of the saint's life and death (vocation, miracles, and martyrdom)."
 
 print("Generating embeddings...")
-#embeddings = model.encode(df['biography'].tolist(), show_progress_bar=True)
-embeddings = model.encode([[instruction, text] for text in df['biography'].tolist()])
+embeddings = model.encode(df['biography'].tolist(), show_progress_bar=True)
+#embeddings = model.encode([[instruction, text] for text in df['biography'].tolist()])
 
 # 3. Save raw embeddings (384-dimensional)
 # Use this for calculating exact similarity scores later
@@ -67,9 +68,17 @@ for i in range(len(sim_matrix)):
     similar_indices = np.argsort(sim_matrix[i])[::-1][1:11]
     top_10_list.append(similar_indices.tolist())
 
-# 4. Add these to your JSON export
-# Assuming 'df' is your saints dataframe
-df['top_10_similar_indices'] = top_10_list
+top_10_data = []
+for i, indices in enumerate(top_10_list):
+    # Grab the scores for the specific neighbors of saint i
+    # We round to 4 decimals to keep the JSON file size smaller
+    scores = [round(float(sim_matrix[i][idx]), 4) for idx in indices]
+    
+    # Bundle them together: [{'idx': 244, 'score': 0.98}, ...]
+    combined = [{"idx": int(idx), "score": s} for idx, s in zip(indices, scores)]
+    top_10_data.append(combined)
+
+df['similar'] = top_10_data
 
 
 # 4. Run t-SNE for Visualization
@@ -87,6 +96,14 @@ tsne_results = tsne.fit_transform(embeddings)
 # 5. Save the 2D coordinates back into a CSV for easy plotting
 df['x'] = tsne_results[:, 0]
 df['y'] = tsne_results[:, 1]
-df.to_csv('saints_viz_data.csv', index=False)
 
-print("Checkpoint saved! You now have 'saint_embeddings.npy' and 'saints_viz_data.csv'.")
+# 1. Convert DataFrame to a list of dictionaries (one per saint)
+data_records = df.to_dict(orient='records')
+
+# 2. Save directly to JSON
+with open('saints_embedding_data.json', 'w', encoding='utf-8') as f:
+    # Use indent=2 to make it readable for debugging, 
+    # or remove it for a smaller file size in production
+    json.dump(data_records, f, ensure_ascii=False, indent=2)
+
+print("Checkpoint saved! You now have 'saint_embeddings.npy' and 'saints_embedding_data.json'")
