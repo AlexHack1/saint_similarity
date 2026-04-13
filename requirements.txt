@@ -1,0 +1,12 @@
+torch
+sentence-transformers==2.2.2
+InstructorEmbedding
+
+pandas
+numpy
+
+scikit-learn
+networkx
+python-louvain
+
+tqdm
