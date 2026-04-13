@@ -225,7 +225,6 @@
                                 // 2. Clickable Name
                                 li.append("a")
                                     .attr("href", neighbor.url)
-                                    .attr("target", "_blank")
                                     .attr("rel", "noopener noreferrer")
                                     .style("display", "block")
                                     .style("text-decoration", "none")
@@ -235,7 +234,8 @@
                                     .on("mouseover", function() { d3.select(this).style("text-decoration", "underline"); })
                                     .on("mouseout", function() { d3.select(this).style("text-decoration", "none"); })
                                     .on("click", (e) => {
-                                        node.filter(n => n.id === neighbor.id).dispatch("click");
+//                                        e.stopPropagation();
+//                                        node.filter(n => n.id === neighbor.id).dispatch("click");
                                     });
                                 
                                 // 3. Handle the score (check if item is an object and has a score)
