@@ -2,15 +2,51 @@ import pandas as pd
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.manifold import TSNE
+import re
+from InstructorEmbedding import INSTRUCTOR
+import torch
 
-# 1. Load your local CSV
+def surgical_scrub(text, saint_name):
+    # 1. Handle the full name (e.g., "John of the Cross")
+    # 2. Handle the name without "Saint" or "St." (e.g., "John")
+    # 3. Handle possessives (e.g., "John's")
+    
+    clean_name = re.sub(r'^(Saint|St\.)\s+', '', saint_name, flags=re.IGNORECASE).strip()
+    
+    # We create a list of aliases to find
+    aliases = [
+        re.escape(saint_name),                # Full "Saint John of the Cross"
+        re.escape(clean_name),               # "John of the Cross"
+        rf"{re.escape(clean_name.split()[0])}" # Just "John" (be careful with short names)
+    ]
+    
+    # Sort by length so we replace the longest match first (preventing partial matches)
+    aliases.sort(key=len, reverse=True)
+    pattern = r'\b(' + '|'.join(aliases) + r')\b'
+    
+    # Replace with a neutral placeholder
+    return re.sub(pattern, "[THE_SAINT]", text, flags=re.IGNORECASE)
+
+# Apply this only to the specific row's biography
 df = pd.read_csv('saints_data_full.csv')
 df = df.dropna(subset=['biography']).reset_index(drop=True)
+df['biography'] = df.apply(lambda x: surgical_scrub(x['biography'], x['name']), axis=1)
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
+
+# Load model and move it to the GPU
+model = INSTRUCTOR('hkunlp/instructor-large', device=device)
+# The rest of your code stays the same!
+model._text_length = lambda text: len(text)
 
 # 2. Generate Embeddings
-model = SentenceTransformer('all-MiniLM-L6-v2')
+#model = SentenceTransformer('all-MiniLM-L6-v2')
+
+instruction = "Represent the hagiography for clustering by historical era, location, and theological contribution, ignoring common names:"
 print("Generating embeddings...")
-embeddings = model.encode(df['biography'].tolist(), show_progress_bar=True)
+#embeddings = model.encode(df['biography'].tolist(), show_progress_bar=True)
+embeddings = model.encode([[instruction, text] for text in df['biography'].tolist()])
 
 # 3. Save raw embeddings (384-dimensional)
 # Use this for calculating exact similarity scores later
