@@ -56,6 +56,92 @@
     z-index: 1;
 }
         #close-btn { cursor: pointer; float: right; border: none; background: none; font-size: 20px; }
+        
+        /* Search dropdown */
+        #search-dropdown {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 4px;
+            max-height: 300px;
+            overflow-y: auto;
+            width: 100%;
+            margin-top: 2px;
+            display: none;
+            z-index: 3000;
+        }
+        #search-dropdown div {
+            padding: 8px 12px;
+            cursor: pointer;
+            color: white;
+            border-bottom: 1px solid #333;
+        }
+        #search-dropdown div:hover {
+            background: #444;
+        }
+        #search-dropdown .match-highlight {
+            font-weight: bold;
+            color: #7eb7da;
+        }
+        #search-container {
+            position: relative;
+            width: 100%;
+        }
+        
+        /* Info button */
+        #info-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: 2px solid white;
+            font-style: italic;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #info-btn:hover {
+            background: rgba(50, 50, 50, 0.9);
+        }
+        
+        /* Info popup */
+        #info-popup {
+            position: absolute;
+            top: 55px;
+            right: 15px;
+            width: 300px;
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 2000;
+            display: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+            line-height: 1.5;
+            font-size: 14px;
+        }
+        #info-popup a {
+            color: white;
+        }
+        #info-popup h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #7eb7da;
+        }
+        #info-popup .close-info {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            cursor: pointer;
+            font-size: 18px;
+        }
     </style>
 </head>
 <body>
@@ -65,7 +151,10 @@
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <b style="color: white;">Saint Similarity Network</b>
             </div>
-            <input type="text" id="search" placeholder="Search for a saint..." style="margin-top:10px; padding:5px; width:100%;">
+            <div id="search-container">
+                <input type="text" id="search" placeholder="Search for a saint..." style="margin-top:10px; padding:5px; width:100%;">
+                <div id="search-dropdown"></div>
+            </div>
         </div>
 
         <div id="sidebar" class="hidden">
@@ -79,6 +168,24 @@
     </div>
 
     <svg id="viz"></svg>
+    
+    <button id="info-btn" title="About">i</button>
+    
+    <div id="info-popup">
+        <span class="close-info">&times;</span>
+        <h3>Saint Similarity Network</h3>
+        <p>This visualization displays saints as nodes in a constellation graph, positioned based on their similarity from Wikipedia content.</p>
+        <p><strong>How to use:</strong></p>
+        <ul>
+            <li>Search for a saint using the search box</li>
+            <li>Click on any saint to see similar saints</li>
+            <li>Scroll to zoom, drag the background to pan</li>
+        </ul>
+        <p>Saints closer together have more similar Wikipedia articles.</p>
+        <p>Text embeddings are created with the <a href="https://huggingface.co/hkunlp/instructor-large">Instructor</a> model and projected down to a 2D space via TSNE.</p>
+        <p> Prompt: "Represent the hagiography for clustering by historical era, location, and theological contribution, ignoring common names"
+</p>
+    </div>
 </div>
 
     <script>
@@ -87,16 +194,67 @@
 
         const svg = d3.select("#viz")
             .attr("width", width)
-            .attr("height", height)
-            .call(d3.zoom().on("zoom", (event) => {
+            .attr("height", height);
+        
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 8])
+            .on("zoom", (event) => {
                 container.attr("transform", event.transform);
-            }));
+            });
+        
+        svg.call(zoom);
+        
         d3.select("#close-btn").on("click", function() {
             d3.select("#sidebar").classed("hidden", true);
         });
+        
+        // Info button functionality
+        d3.select("#info-btn").on("click", function() {
+            d3.select("#info-popup").style("display", "block");
+        });
+        
+        d3.select("#info-popup .close-info").on("click", function() {
+            d3.select("#info-popup").style("display", "none");
+        });
+        
+        // Close info popup when clicking outside
+        d3.select(window).on("click", function(event) {
+            if (!d3.select("#info-popup").empty() && 
+                d3.select("#info-popup").style("display") === "block" &&
+                !d3.select("#info-popup").node().contains(event.target) &&
+                event.target.id !== "info-btn") {
+                d3.select("#info-popup").style("display", "none");
+            }
+        });
+        
         const container = svg.append("g");
 
         const color = d3.scaleOrdinal(d3.schemeCategory10); // Standard 10-color palette
+        
+        function teleportToSaint(saint) {
+            // Calculate the transform to center on the saint
+            const scale = 1.5; // Zoom in a bit
+            const x = width / 2 - saint.x * scale;
+            const y = height / 2 - saint.y * scale;
+            
+            svg.transition()
+                .duration(750)
+                .call(zoom.transform, d3.zoomIdentity.translate(x, y).scale(scale));
+        }
+        
+        function resetMapState() {
+            // Restore all nodes and labels to normal state
+            d3.selectAll(".node")
+                .transition().duration(300)
+                .style("opacity", 1)
+                .attr("r", d => d.size || 7)
+                .style("stroke", "#fff")
+                .style("stroke-width", d => d.borderWidth || "1.5px");
+            
+            d3.selectAll(".label")
+                .transition().duration(300)
+                .style("opacity", 1);
+        }
         
         function resetHighlight() {
             // Remove red lines
@@ -268,36 +426,119 @@
 
             d3.select("#search").on("keyup", function(event) {
             const searchTerm = event.target.value.toLowerCase();
+            const dropdown = d3.select("#search-dropdown");
                     
             // 1. ALWAYS clear red lines whenever the search changes or begins
             container.selectAll(".temp-link").remove();
                     
             // 2. If the user hits ENTER, do the teleport and full highlight
             if (event.key === "Enter") {
+                // If there's a highlighted selection in dropdown, use that
+                const selected = dropdown.selectAll("div").filter(function() {
+                    return d3.select(this).classed("selected");
+                });
+                
+                if (!selected.empty()) {
+                    const match = selected.datum();
+                    teleportToSaint(match);
+                    node.filter(d => d === match).dispatch("click");
+                    dropdown.style("display", "none").selectAll("div").remove();
+                    d3.select("#search").property("value", match.name);
+                    return;
+                }
+                
+                // Otherwise, find first match
                 const match = graph.nodes.find(n => n.name.toLowerCase().includes(searchTerm));
                 if (match) {
-                    // This centers the map on the saint
                     teleportToSaint(match);
-
-                    // This triggers the red lines and sidebar population 
-                    // by simulating a click on that specific dot
                     node.filter(d => d === match).dispatch("click");
-                    return; // Exit so we don't run the generic opacity code below
+                    dropdown.style("display", "none").selectAll("div").remove();
+                    return;
                 }
             }
+            
+            // 3. Handle arrow keys for dropdown navigation
+            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                const options = dropdown.selectAll("div");
+                if (options.empty()) return;
+                
+                let currentIdx = -1;
+                options.each(function(d, i) {
+                    if (d3.select(this).classed("selected")) currentIdx = i;
+                });
+                
+                let newIdx = currentIdx;
+                if (event.key === "ArrowDown") {
+                    newIdx = currentIdx < options.size() - 1 ? currentIdx + 1 : 0;
+                } else {
+                    newIdx = currentIdx > 0 ? currentIdx - 1 : options.size() - 1;
+                }
+                
+                options.classed("selected", false).style("background", "");
+                options.filter((d, i) => i === newIdx)
+                    .classed("selected", true)
+                    .style("background", "#444");
+                return;
+            }
+            
+            // 4. Close dropdown on Escape
+            if (event.key === "Escape") {
+                dropdown.style("display", "none").selectAll("div").remove();
+                return;
+            }
         
-            // 3. Generic "Live" highlighting (while typing)
+            // 5. Show dropdown with matching saints
             if (searchTerm === "") {
-                // If search is empty, call our global reset to restore everything perfectly
+                dropdown.style("display", "none").selectAll("div").remove();
                 resetMapState();
             } else {
-                // Highlight matches, ghost others
+                // Find all matches
+                const matches = graph.nodes.filter(n => n.name.toLowerCase().includes(searchTerm));
+                
+                if (matches.length > 0) {
+                    dropdown.html("").style("display", "block");
+                    
+                    matches.slice(0, 20).forEach((match, i) => {
+                        const div = dropdown.append("div")
+                            .datum(match)
+                            .text(match.name)
+                            .on("click", function() {
+                                const saint = d3.select(this).datum();
+                                teleportToSaint(saint);
+                                node.filter(d => d === saint).dispatch("click");
+                                dropdown.style("display", "none").selectAll("div").remove();
+                                d3.select("#search").property("value", saint.name);
+                            })
+                            .on("mouseover", function() {
+                                d3.selectAll("#search-dropdown div").classed("selected", false).style("background", "");
+                                d3.select(this).classed("selected", true).style("background", "#444");
+                            });
+                        
+                        if (i === 0) {
+                            div.classed("selected", true).style("background", "#444");
+                        }
+                    });
+                    
+                    if (matches.length > 20) {
+                        dropdown.append("div")
+                            .text(`... and ${matches.length - 20} more`)
+                            .style("color", "#888")
+                            .style("cursor", "default")
+                            .on("click", null);
+                    }
+                } else {
+                    dropdown.html("").style("display", "block")
+                        .append("div")
+                        .text("No matches found")
+                        .style("color", "#888")
+                        .style("cursor", "default");
+                }
+                
+                // Highlight matches on graph
                 const isMatch = d => d.name.toLowerCase().includes(searchTerm);
             
                 node.style("opacity", d => isMatch(d) ? 1 : 0.1)
-                    // RESTORE: Use original size logic here instead of 12 or 7
                     .attr("r", d => d.size || 7) 
-                    // RESTORE: Keep the white stripe visible even when ghosted
                     .style("stroke", "#fff")
                     .style("stroke-width", d => d.borderWidth || "1.5px");
             
